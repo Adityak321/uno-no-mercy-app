@@ -1,7 +1,6 @@
 import streamlit as st
 import random
 
-# Initialize game state
 if 'game_started' not in st.session_state:
     st.session_state.game_started = True
     st.session_state.colours = ['Red', 'Green', 'Blue', 'Yellow']
