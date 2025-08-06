@@ -1,117 +1,192 @@
 import streamlit as st
 import random
 
-if 'game_started' not in st.session_state:
-    st.session_state.game_started = True
-    st.session_state.colours = ['Red', 'Green', 'Blue', 'Yellow']
-    st.session_state.numbers = [str(i) for i in range(10)]
-    st.session_state.actions = ['Skip', 'Reverse', '+2']
-    st.session_state.deck = []
-    for color in st.session_state.colours:
-        st.session_state.deck.append(color + ' 0')
-        for i in range(1, 10):
-            st.session_state.deck.append(color + ' ' + str(i))
-            st.session_state.deck.append(color + ' ' + str(i))
-        for action in st.session_state.actions:
-            st.session_state.deck.append(color + ' ' + action)
-            st.session_state.deck.append(color + ' ' + action)
-    for i in range(4):
-        st.session_state.deck.append('Wild')
-        st.session_state.deck.append('+4')
-    wilds = [
-        'Wild Reverse Draw 4',
-        'Wild Draw 6',
-        'Wild Draw 10',
-        'Wild Color Roulette']
-    for i in range(2):
-        for wild in wilds:
-            st.session_state.deck.append(wild)
-    random.shuffle(st.session_state.deck)
+# GAME SETUP
+colours = ['Red', 'Green', 'Blue', 'Yellow']
+numbers = [str(i) for i in range(10)]
+actions = ['Skip', 'Reverse', '+2']
+special_wilds = [
+    'Wild Reverse Draw 4',
+    'Wild Draw 6',
+    'Wild Draw 10',
+    'Wild Color Roulette'
+]
 
-    st.session_state.player = [st.session_state.deck.pop() for _ in range(7)]
-    st.session_state.computer = [st.session_state.deck.pop() for _ in range(7)]
-    st.session_state.discard_pile = []
-    top_card = st.session_state.deck.pop()
-    while ('+4' in top_card or 'Wild' in top_card):
-        st.session_state.deck.append(top_card)
-        random.shuffle(st.session_state.deck)
-        top_card = st.session_state.deck.pop()
-    st.session_state.discard_pile.append(top_card)
-    st.session_state.turn = 'player'
+# DECK
+deck = []
+for color in colours:
+    deck.append(color + ' 0')
+    for i in range(1, 10):
+        deck.append(color + ' ' + str(i))
+        deck.append(color + ' ' + str(i))
+    for action in actions:
+        deck.append(color + ' ' + action)
+        deck.append(color + ' ' + action)
 
+for i in range(4):
+    deck.append('Wild')
+    deck.append('+4')
 
-def allowed_play(card, top_card):
-    if "Wild" in card:
+for i in range(2):
+    for wild in special_wilds:
+        deck.append(wild)
+
+random.shuffle(deck)
+
+# FUNCTIONS
+def draw_card(deck, count=1):
+    return [deck.pop() for _ in range(count) if len(deck) > 0]
+
+def allowed_play(card, top):
+    if "Wild" in card or "+4" in card:
         return True
-    card_parts = card.split(' ')
-    top_parts = top_card.split(' ')
-    if card_parts[0] == top_parts[0]:
-        return True
-    if len(card_parts) > 1 and len(top_parts) > 1 and card_parts[1] == top_parts[1]:
-        return True
-    return False
+    c_parts = card.split(" ")
+    t_parts = top.split(" ")
+    return c_parts[0] == t_parts[0] or c_parts[1] == t_parts[1]
 
-st.title("UNO No Mercy - Streamlit Edition")
-st.subheader("Top card: " + st.session_state.discard_pile[-1])
+def choose_color():
+    return st.selectbox("Choose a color:", colours)
 
-if st.session_state.turn == 'player':
-    st.subheader("Your Hand")
-    selected_card = st.selectbox("Choose a card to play or Draw", options=st.session_state.player + ['Draw'])
+def handle_special(card, me, opponent, deck):
+    message = ""
+    skip = False
 
-    if st.button("Play Card"):
-        if selected_card == 'Draw':
-            if len(st.session_state.deck) > 0:
-                drawn = st.session_state.deck.pop()
-                st.session_state.player.append(drawn)
-                st.write("You drew:", drawn)
-            else:
-                st.write("Deck is empty! Can't draw.")
-        elif allowed_play(selected_card, st.session_state.discard_pile[-1]):
-            st.session_state.player.remove(selected_card)
-            if 'Wild' in selected_card:
-                color_choice = st.selectbox("You played a Wild! Choose a color", st.session_state.colours, key='color_pick')
-                wild_card = color_choice + " " + selected_card
-                st.session_state.discard_pile.append(wild_card)
-                st.write("You played:", wild_card)
-            else:
-                st.session_state.discard_pile.append(selected_card)
-                st.write("You played:", selected_card)
-            if len(st.session_state.player) == 0:
-                st.success("You won!")
-            else:
-                st.session_state.turn = 'computer'
+    if card == 'Wild Reverse Draw 4':
+        if len(me) == 1:
+            me.extend(draw_card(deck, 4))
+            message = "Only 2 players: YOU draw 4!"
         else:
-            st.write("You can't play that card.")
+            opponent.extend(draw_card(deck, 4))
+            message = "Opponent draws 4!"
+            skip = True
 
+    elif card == 'Wild Draw 6':
+        opponent.extend(draw_card(deck, 6))
+        message = "Opponent draws 6 cards!"
+        skip = True
+
+    elif card == 'Wild Draw 10':
+        opponent.extend(draw_card(deck, 10))
+        message = "Opponent draws 10 cards!"
+        skip = True
+
+    elif card == 'Wild Color Roulette':
+        chosen = choose_color()
+        message = "Color chosen: " + chosen + ". Opponent keeps drawing until they get that color."
+        revealed = []
+        while len(deck) > 0:
+            c = deck.pop()
+            revealed.append(c)
+            if c.startswith(chosen) and "Wild" not in c:
+                break
+        opponent.extend(revealed)
+        skip = True
+
+    return message, skip
+
+# INITIAL STATE
+if 'player' not in st.session_state:
+    st.session_state.deck = deck
+    st.session_state.player = draw_card(st.session_state.deck, 7)
+    st.session_state.computer = draw_card(st.session_state.deck, 7)
+    top = st.session_state.deck.pop()
+    while "Wild" in top or "+4" in top:
+        st.session_state.deck.insert(0, top)
+        random.shuffle(st.session_state.deck)
+        top = st.session_state.deck.pop()
+    st.session_state.discard = [top]
+    st.session_state.turn = 'player'
+    st.session_state.skip = False
+    st.session_state.color_override = None
+    st.session_state.message = ""
+
+# UI
+st.title("UNO: No Mercy Edition 🎮")
+st.markdown("**Top Card:** " + st.session_state.discard[-1])
+st.write(st.session_state.message)
+
+# PLAYER TURN
+if st.session_state.turn == 'player':
+    st.subheader("Your Turn")
+
+    for i, card in enumerate(st.session_state.player):
+        if allowed_play(card, st.session_state.discard[-1]):
+            if st.button("Play " + card, key="p" + str(i)):
+                chosen = st.session_state.player.pop(i)
+                if 'Wild' in chosen or '+4' in chosen:
+                    color = choose_color()
+                    new_card = color + " " + chosen
+                    st.session_state.discard.append(new_card)
+                    msg, skip = handle_special(chosen, st.session_state.player, st.session_state.computer, st.session_state.deck)
+                    st.session_state.message = msg
+                    st.session_state.skip = skip
+                else:
+                    st.session_state.discard.append(chosen)
+                    if '7' in chosen:
+                        st.session_state.player, st.session_state.computer = st.session_state.computer, st.session_state.player
+                        st.session_state.message = "7 Played: Hands Swapped!"
+                    elif '0' in chosen:
+                        st.session_state.player, st.session_state.computer = st.session_state.computer, st.session_state.player
+                        st.session_state.message = "0 Played: Hands Passed!"
+                st.session_state.turn = 'computer'
+                st.rerun()
+
+    if st.button("Draw"):
+        drawn = draw_card(st.session_state.deck)
+        if drawn:
+            st.session_state.player.extend(drawn)
+            st.session_state.message = "You drew: " + drawn[0]
+        st.session_state.turn = 'computer'
+        st.rerun()
+
+# COMPUTER TURN
 elif st.session_state.turn == 'computer':
     st.subheader("Computer's Turn")
-    top_card = st.session_state.discard_pile[-1]
-    found = False
-    for i, card in enumerate(st.session_state.computer):
-        if allowed_play(card, top_card):
-            st.session_state.computer.pop(i)
-            if 'Wild' in card:
-                color = random.choice(st.session_state.colours)
-                played = color + ' ' + card
-                st.session_state.discard_pile.append(played)
-                st.write("Computer played:", played)
-            else:
-                st.session_state.discard_pile.append(card)
-                st.write("Computer played:", card)
-            found = True
-            break
-    if not found:
-        if len(st.session_state.deck) > 0:
-            drawn = st.session_state.deck.pop()
-            st.session_state.computer.append(drawn)
-            st.write("Computer drew a card.")
-        else:
-            st.write("Deck is empty! Computer can't draw.")
 
-    if len(st.session_state.computer) == 0:
-        st.error("Computer won!")
+    played = False
+    for i, card in enumerate(st.session_state.computer):
+        if allowed_play(card, st.session_state.discard[-1]):
+            chosen = st.session_state.computer.pop(i)
+            if 'Wild' in chosen or '+4' in chosen:
+                color = random.choice(colours)
+                new_card = color + " " + chosen
+                st.session_state.discard.append(new_card)
+                msg, skip = handle_special(chosen, st.session_state.computer, st.session_state.player, st.session_state.deck)
+                st.session_state.message = "Computer played: " + chosen + ". " + msg
+                st.session_state.skip = skip
+            else:
+                st.session_state.discard.append(chosen)
+                if '7' in chosen:
+                    st.session_state.computer, st.session_state.player = st.session_state.player, st.session_state.computer
+                    st.session_state.message = "Computer played 7: Swapped hands!"
+                elif '0' in chosen:
+                    st.session_state.computer, st.session_state.player = st.session_state.player, st.session_state.computer
+                    st.session_state.message = "Computer played 0: Passed hands!"
+                else:
+                    st.session_state.message = "Computer played: " + chosen
+            played = True
+            break
+
+    if not played:
+        drawn = draw_card(st.session_state.deck)
+        st.session_state.computer.extend(drawn)
+        st.session_state.message = "Computer drew a card."
+
+    # Switch turns
+    if st.session_state.skip:
+        st.session_state.skip = False
+        st.session_state.turn = 'computer'
     else:
         st.session_state.turn = 'player'
 
-st.write("---")
-st.write("Cards remaining in deck:", len(st.session_state.deck))
+
+# SHOW PLAYER CARDS
+st.subheader("Your Cards")
+st.write(st.session_state.player)
+
+# WINNING CONDITION
+if len(st.session_state.player) == 0:
+    st.balloons()
+    st.success("You Won!")
+elif len(st.session_state.computer) == 0:
+    st.error("Computer Won!")
